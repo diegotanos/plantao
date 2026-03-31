@@ -124,7 +124,7 @@ export function PacienteForm({ onSalvar, onCancelar }: PacienteFormProps) {
               <textarea
                 rows={2}
                 className={inputClass}
-                value={(form as Record<string, unknown>)[key] as string || ''}
+                value={(form as unknown as Record<string, string>)[key] || ''}
                 onChange={e => set(key as keyof PacienteFormData, e.target.value)}
               />
             </div>

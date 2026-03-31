@@ -1,4 +1,5 @@
 'use client'
+export const dynamic = 'force-dynamic'
 import { useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePlantao } from '@/lib/hooks/usePlantao'

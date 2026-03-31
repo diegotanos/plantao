@@ -1,4 +1,5 @@
 'use client'
+export const dynamic = 'force-dynamic'
 import { usePlantao } from '@/lib/hooks/usePlantao'
 import Link from 'next/link'
 import { formatarData, duracaoPlantao } from '@/lib/utils/formatters'

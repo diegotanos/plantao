@@ -1,4 +1,5 @@
 'use client'
+export const dynamic = 'force-dynamic'
 import { usePlantao } from '@/lib/hooks/usePlantao'
 import { useNotificacoes } from '@/lib/hooks/useNotificacoes'
 import { formatDistanceToNow } from 'date-fns'
