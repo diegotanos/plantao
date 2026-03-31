@@ -1,0 +1,101 @@
+{
+  "name": "Agente Vida — Resumo Diário (20h)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] },
+        "cronExpression": "0 20 * * *"
+      },
+      "id": "cron-resumo",
+      "name": "Cron 20h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTE_URL }}/internal/resumo-diario",
+        "authentication": "headerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tipo", "value": "resumo_diario" },
+            { "name": "data", "value": "={{ $now.toISO() }}" }
+          ]
+        }
+      },
+      "id": "http-resumo",
+      "name": "Disparar Resumo Diário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-sucesso",
+      "name": "Verificar Sucesso",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de sucesso\nreturn [{ json: { status: 'resumo_enviado', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "log-sucesso",
+      "name": "Log Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de erro — aqui poderia enviar alerta para o dono do sistema\nconsole.error('Falha no resumo diário:', JSON.stringify($input.all()));\nreturn [{ json: { status: 'erro', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "log-erro",
+      "name": "Log Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 360]
+    }
+  ],
+  "connections": {
+    "Cron 20h": { "main": [[{ "node": "Disparar Resumo Diário", "type": "main", "index": 0 }]] },
+    "Disparar Resumo Diário": { "main": [[{ "node": "Verificar Sucesso", "type": "main", "index": 0 }]] },
+    "Verificar Sucesso": {
+      "main": [
+        [{ "node": "Log Sucesso", "type": "main", "index": 0 }],
+        [{ "node": "Log Erro", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "staticData": null,
+  "tags": ["agente-vida", "cron", "resumo"],
+  "triggerCount": 0,
+  "updatedAt": "2026-03-31T00:00:00.000Z",
+  "versionId": "1"
+}

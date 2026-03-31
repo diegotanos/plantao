@@ -20,6 +20,9 @@ const {
 const { transcreverAudio, extrairDadosNF } = require('../../integrations/openai');
 const { classificar } = require('../../agent/intent_classifier');
 const { registrarTroca, detectarEsalvarPadrao } = require('../../agent/memory_manager');
+const { criarEventoPlantao, criarEvento } = require('../../integrations/google_calendar');
+const { registrarGasto: sheetsGasto, registrarReceita: sheetsReceita, registrarPlantao: sheetsPlantao } = require('../../integrations/google_sheets');
+const { uploadArquivo, gerarNomeArquivo } = require('../../integrations/google_drive');
 const {
   upsertUserByTelegramId,
   salvarGasto,
@@ -203,11 +206,23 @@ async function handleFoto(msg) {
     const caminhoFoto = await baixarFoto(photos);
 
     let dadosNF;
+    let comprovanteUrl = null;
     try {
       const base64 = imagemParaBase64(caminhoFoto);
       dadosNF = await extrairDadosNF(base64, 'image/jpeg');
+
+      // Faz upload para o Drive de forma assíncrona (não bloqueia)
+      const nomeArquivo = gerarNomeArquivo(
+        'nf',
+        dadosNF.estabelecimento ?? 'nota_fiscal',
+        dadosNF.data
+      );
+      uploadArquivo({ caminhoLocal: caminhoFoto, nomeArquivo })
+        .then((r) => { comprovanteUrl = r?.webViewLink ?? null; })
+        .catch((e) => logger.warn('Drive upload falhou', { error: e.message }));
     } finally {
-      limparArquivoTemp(caminhoFoto);
+      // Aguarda um pouco para o upload iniciar antes de deletar
+      setTimeout(() => limparArquivoTemp(caminhoFoto), 5000);
     }
 
     if (!dadosNF.valor_total) {
@@ -269,27 +284,81 @@ async function executarAcao(resultado, userId, chatId, telegramId) {
 
   try {
     switch (intencao) {
-      case INTENCOES.REGISTRAR_GASTO:
-        await salvarGasto({ ...dados, user_id: userId });
+      case INTENCOES.REGISTRAR_GASTO: {
+        const gastoSalvo = await salvarGasto({ ...dados, user_id: userId });
+        // Espelha no Sheets de forma não-bloqueante
+        sheetsGasto(gastoSalvo).catch((e) =>
+          logger.warn('Sheets gasto falhou', { error: e.message })
+        );
         await enviarMensagem(chatId, resposta_usuario);
         break;
+      }
 
-      case INTENCOES.REGISTRAR_RECEITA:
-        await salvarReceita({ ...dados, user_id: userId });
+      case INTENCOES.REGISTRAR_RECEITA: {
+        const receitaSalva = await salvarReceita({ ...dados, user_id: userId });
+        sheetsReceita(receitaSalva).catch((e) =>
+          logger.warn('Sheets receita falhou', { error: e.message })
+        );
         await enviarMensagem(chatId, resposta_usuario);
         break;
+      }
 
-      case INTENCOES.REGISTRAR_PLANTAO:
-        await salvarPlantao({ ...dados, user_id: userId });
-        await enviarMensagem(chatId, resposta_usuario);
-        // TODO Fase 2: criar evento no Google Calendar
-        break;
+      case INTENCOES.REGISTRAR_PLANTAO: {
+        // Cria evento no Calendar primeiro (obtém o ID)
+        let calendarEventId = null;
+        try {
+          const evento = await criarEventoPlantao({
+            local: dados.local,
+            dataInicio: dados.data_inicio,
+            dataFim: dados.data_fim,
+            valorCombinado: dados.valor_combinado,
+          });
+          calendarEventId = evento?.id ?? null;
+        } catch (e) {
+          logger.warn('Calendar plantão falhou', { error: e.message });
+        }
 
-      case INTENCOES.CRIAR_COMPROMISSO:
-        await salvarCompromisso({ ...dados, user_id: userId });
-        await enviarMensagem(chatId, resposta_usuario);
-        // TODO Fase 2: criar evento no Google Calendar
+        const plantaoSalvo = await salvarPlantao({
+          ...dados,
+          user_id: userId,
+          calendar_event_id: calendarEventId,
+        });
+
+        sheetsPlantao(plantaoSalvo).catch((e) =>
+          logger.warn('Sheets plantão falhou', { error: e.message })
+        );
+
+        const linkCalendar = calendarEventId ? ' 📅 Adicionado ao Calendar.' : '';
+        await enviarMensagem(chatId, resposta_usuario + linkCalendar);
         break;
+      }
+
+      case INTENCOES.CRIAR_COMPROMISSO: {
+        let calendarEventId = null;
+        try {
+          const evento = await criarEvento({
+            titulo: dados.titulo,
+            descricao: dados.descricao ?? '',
+            dataInicio: dados.data_inicio,
+            dataFim: dados.data_fim,
+            local: dados.local ?? '',
+            lembreteMinutos: dados.lembrete_minutos ?? 30,
+          });
+          calendarEventId = evento?.id ?? null;
+        } catch (e) {
+          logger.warn('Calendar compromisso falhou', { error: e.message });
+        }
+
+        await salvarCompromisso({
+          ...dados,
+          user_id: userId,
+          calendar_event_id: calendarEventId,
+        });
+
+        const linkCalendar = calendarEventId ? ' 📅 Adicionado ao Calendar.' : '';
+        await enviarMensagem(chatId, resposta_usuario + linkCalendar);
+        break;
+      }
 
       case INTENCOES.CONSULTAR_SALDO:
       case INTENCOES.RESUMO_FINANCEIRO: {
@@ -384,20 +453,36 @@ async function handleRespostaConfirmacao(chatId, telegramId, texto, estado) {
 
     switch (acao) {
       case 'confirmar_gasto_nf':
-      case INTENCOES.REGISTRAR_GASTO:
-        await salvarGasto(dados);
+      case INTENCOES.REGISTRAR_GASTO: {
+        const g = await salvarGasto(dados);
+        sheetsGasto(g).catch(() => {});
         await enviarMensagem(chatId, `✅ Gasto de R$ ${Number(dados.valor).toFixed(2)} registrado!`);
         break;
+      }
 
-      case INTENCOES.REGISTRAR_RECEITA:
-        await salvarReceita(dados);
+      case INTENCOES.REGISTRAR_RECEITA: {
+        const r = await salvarReceita(dados);
+        sheetsReceita(r).catch(() => {});
         await enviarMensagem(chatId, `✅ Receita de R$ ${Number(dados.valor).toFixed(2)} registrada!`);
         break;
+      }
 
-      case INTENCOES.REGISTRAR_PLANTAO:
-        await salvarPlantao(dados);
+      case INTENCOES.REGISTRAR_PLANTAO: {
+        let calId = null;
+        try {
+          const ev = await criarEventoPlantao({
+            local: dados.local,
+            dataInicio: dados.data_inicio,
+            dataFim: dados.data_fim,
+            valorCombinado: dados.valor_combinado,
+          });
+          calId = ev?.id ?? null;
+        } catch (e) { /* não crítico */ }
+        const p = await salvarPlantao({ ...dados, calendar_event_id: calId });
+        sheetsPlantao(p).catch(() => {});
         await enviarMensagem(chatId, `✅ Plantão em ${dados.local} registrado!`);
         break;
+      }
 
       case INTENCOES.CANCELAR_EVENTO:
         // TODO: implementar cancelamento real

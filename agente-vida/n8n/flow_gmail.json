@@ -1,0 +1,52 @@
+{
+  "name": "Agente Vida — Captura Gmail (a cada 30 min)",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "cron-gmail",
+      "name": "Cron 30min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTE_URL }}/webhooks/gmail/poll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" }
+          ]
+        }
+      },
+      "id": "http-gmail-poll",
+      "name": "Poll Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst count = result.processados ?? 0;\nif (count > 0) {\n  console.log(`Gmail: ${count} e-mail(s) relevante(s) processado(s)`);\n}\nreturn [{ json: { processados: count } }];"
+      },
+      "id": "log-gmail",
+      "name": "Log Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Cron 30min": { "main": [[{ "node": "Poll Gmail", "type": "main", "index": 0 }]] },
+    "Poll Gmail": { "main": [[{ "node": "Log Resultado", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": ["agente-vida", "gmail", "financeiro"],
+  "versionId": "1"
+}

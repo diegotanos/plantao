@@ -1,0 +1,100 @@
+{
+  "name": "Agente Vida — Foto de Nota Fiscal → GPT-4o Vision",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-foto",
+        "options": {}
+      },
+      "id": "webhook-foto",
+      "name": "Webhook Telegram (Foto)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.body?.message;\nconst photos = msg?.photo;\nif (!photos || photos.length === 0) throw new Error('Sem foto');\n// Pega a maior resolução\nconst foto = photos.reduce((a, b) => ((b.file_size ?? 0) > (a.file_size ?? 0) ? b : a));\nreturn [{ json: { file_id: foto.file_id, chat_id: msg.chat.id, user_id: msg.from?.id, nome: msg.from?.first_name } }];"
+      },
+      "id": "extrair-foto",
+      "name": "Extrair Foto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.file_id }}"
+      },
+      "id": "get-file-foto",
+      "name": "Obter URL da Foto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{ $env.TELEGRAM_BOT_TOKEN }}/{{ $json.result.file_path }}",
+        "options": { "response": { "response": { "responseFormat": "file" } } }
+      },
+      "id": "download-foto",
+      "name": "Baixar Foto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Converte binário para base64\nconst binaryData = $binary.data;\nconst base64 = binaryData.toString('base64');\nreturn [{ json: { ...($('Extrair Foto').item.json), base64_foto: base64 } }];"
+      },
+      "id": "converter-base64",
+      "name": "Converter para Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ model: 'gpt-4o', response_format: { type: 'json_object' }, max_tokens: 1024, messages: [{ role: 'user', content: [{ type: 'text', text: 'Extraia os dados desta nota fiscal. Retorne JSON com: valor_total, data (YYYY-MM-DD), estabelecimento, categoria_sugerida (alimentacao/saude/transporte/lazer/moradia/outros), confianca.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${$json.base64_foto}`, detail: 'high' } }] }] }) }}"
+      },
+      "id": "gpt4o-vision",
+      "name": "GPT-4o Vision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resposta = $input.first().json;\nconst conteudo = JSON.parse(resposta.choices[0].message.content);\nconst chatId = $('Extrair Foto').item.json.chat_id;\nreturn [{ json: { ...conteudo, chat_id: chatId } }];"
+      },
+      "id": "parsear-resultado",
+      "name": "Parsear Dados da NF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Telegram (Foto)": { "main": [[{ "node": "Extrair Foto", "type": "main", "index": 0 }]] },
+    "Extrair Foto": { "main": [[{ "node": "Obter URL da Foto", "type": "main", "index": 0 }]] },
+    "Obter URL da Foto": { "main": [[{ "node": "Baixar Foto", "type": "main", "index": 0 }]] },
+    "Baixar Foto": { "main": [[{ "node": "Converter para Base64", "type": "main", "index": 0 }]] },
+    "Converter para Base64": { "main": [[{ "node": "GPT-4o Vision", "type": "main", "index": 0 }]] },
+    "GPT-4o Vision": { "main": [[{ "node": "Parsear Dados da NF", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "America/Sao_Paulo" },
+  "tags": ["agente-vida", "foto", "vision", "nfe"],
+  "versionId": "1"
+}

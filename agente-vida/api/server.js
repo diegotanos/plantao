@@ -36,6 +36,10 @@ app.use('/health', require('./routes/health'));
 // Webhooks — com rate limit e autenticação de segredo
 app.use('/webhooks', webhookRateLimit);
 app.use('/webhooks/telegram', webhookAuth, require('./routes/telegram'));
+app.use('/webhooks/gmail', webhookAuth, require('./routes/gmail'));
+
+// Rotas internas (crons do n8n — protegidas pelo mesmo segredo)
+app.use('/internal', webhookAuth, require('./routes/internal'));
 
 // Rota padrão
 app.get('/', (req, res) => {

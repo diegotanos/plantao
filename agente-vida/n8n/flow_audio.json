@@ -1,0 +1,110 @@
+{
+  "name": "Agente Vida — Áudio → Whisper → GPT-4o",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-audio",
+        "options": {}
+      },
+      "id": "webhook-audio",
+      "name": "Webhook Telegram (Áudio)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai file_id do áudio\nconst msg = $input.first().json.body?.message;\nconst audio = msg?.voice ?? msg?.audio;\nif (!audio) throw new Error('Sem arquivo de áudio');\nreturn [{ json: { file_id: audio.file_id, chat_id: msg.chat.id, user_id: msg.from?.id, nome: msg.from?.first_name } }];"
+      },
+      "id": "extrair-audio",
+      "name": "Extrair file_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.file_id }}",
+        "options": {}
+      },
+      "id": "get-file-info",
+      "name": "Obter URL do Arquivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{ $env.TELEGRAM_BOT_TOKEN }}/{{ $json.result.file_path }}",
+        "options": { "response": { "response": { "responseFormat": "file" } } }
+      },
+      "id": "download-audio",
+      "name": "Baixar Arquivo de Áudio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "whisper-1" },
+            { "name": "language", "value": "pt" },
+            { "name": "file", "value": "={{ $binary.data }}", "parameterType": "formBinaryData" }
+          ]
+        }
+      },
+      "id": "whisper-transcricao",
+      "name": "Transcrever com Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTE_URL }}/webhooks/telegram",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={{ JSON.stringify({ message: { text: $json.text, chat: { id: $('Extrair file_id').item.json.chat_id }, from: { id: $('Extrair file_id').item.json.user_id, first_name: $('Extrair file_id').item.json.nome } } }) }}"
+            }
+          ]
+        }
+      },
+      "id": "enviar-como-texto",
+      "name": "Reenviar como Texto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Telegram (Áudio)": { "main": [[{ "node": "Extrair file_id", "type": "main", "index": 0 }]] },
+    "Extrair file_id": { "main": [[{ "node": "Obter URL do Arquivo", "type": "main", "index": 0 }]] },
+    "Obter URL do Arquivo": { "main": [[{ "node": "Baixar Arquivo de Áudio", "type": "main", "index": 0 }]] },
+    "Baixar Arquivo de Áudio": { "main": [[{ "node": "Transcrever com Whisper", "type": "main", "index": 0 }]] },
+    "Transcrever com Whisper": { "main": [[{ "node": "Reenviar como Texto", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "America/Sao_Paulo" },
+  "tags": ["agente-vida", "audio", "whisper"],
+  "versionId": "1",
+  "_comentario": "Fluxo alternativo de transcrição via n8n. O handler Express já faz isso nativamente — use este fluxo para processamento paralelo ou fallback."
+}

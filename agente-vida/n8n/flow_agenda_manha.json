@@ -1,0 +1,49 @@
+{
+  "name": "Agente Vida — Agenda Matinal (7h)",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "cron-agenda",
+      "name": "Cron 7h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTE_URL }}/internal/agenda-manha",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tipo", "value": "agenda_manha" },
+            { "name": "data", "value": "={{ $now.toISO() }}" }
+          ]
+        }
+      },
+      "id": "http-agenda",
+      "name": "Disparar Agenda Matinal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Cron 7h": { "main": [[{ "node": "Disparar Agenda Matinal", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": ["agente-vida", "cron", "agenda"],
+  "versionId": "1"
+}
