@@ -1,0 +1,32 @@
+{
+  "name": "agente-vida",
+  "version": "1.0.0",
+  "description": "Agente Pessoal de Organização de Vida — bot inteligente via Telegram com GPT-4o, Supabase e integrações múltiplas",
+  "main": "api/server.js",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "nodemon api/server.js",
+    "setup": "node scripts/setup.js",
+    "seed": "node scripts/seed_db.js",
+    "lint": "eslint . --ext .js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "form-data": "^4.0.0",
+    "ioredis": "^5.3.2",
+    "node-telegram-bot-api": "^0.64.0",
+    "openai": "^4.24.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Aplicação principal — Agente Vida (Node.js)
+  # ---------------------------------------------------------------------------
+  agente:
+    build: .
+    container_name: agente-vida
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /tmp/agente-vida:/tmp   # diretório para arquivos temporários
+    networks:
+      - agente-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache de sessão e contexto de conversa
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: agente-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - agente-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # n8n — orquestrador de automações (Fase 2+)
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: agente-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n:/home/node/.n8n/workflows:ro   # importa workflows automaticamente
+    networks:
+      - agente-net
+
+volumes:
+  redis-data:
+    driver: local
+  n8n-data:
+    driver: local
+
+networks:
+  agente-net:
+    driver: bridge
